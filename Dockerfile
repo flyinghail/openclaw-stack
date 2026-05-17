@@ -3,8 +3,8 @@ FROM ghcr.io/openclaw/openclaw:latest
 USER root
 
 RUN set -eux; \
-    apt-get update \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    apt update && \
+    DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends \
         python3 \
         python3-pip \
         python3-venv \
@@ -22,9 +22,9 @@ RUN set -eux; \
         less \
         nano \
         vim-tiny \
-        openssh-client; \
-    ln -sf /usr/bin/fdfind /usr/local/bin/fd; \
-    rm -rf /var/lib/apt/lists/* \
+        openssh-client && \
+    ln -sf /usr/bin/fdfind /usr/local/bin/fd  && \
+    rm -rf /var/lib/apt/lists/*; \
     mkdir -p \
       /home/node/.openclaw \
       /home/node/.openclaw/workspace \
