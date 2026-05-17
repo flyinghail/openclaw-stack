@@ -1,0 +1,123 @@
+x-openclaw-image: &openclaw-image
+  ${OPENCLAW_IMAGE:-ghcr.io/flyinghail/openclaw-stack:latest}
+
+x-openclaw-env-file: &openclaw-env-file
+  - ${OPENCLAW_ENV_FILE:-.env}
+
+x-openclaw-env: &openclaw-env
+  HOME: /home/node
+  OPENCLAW_HOME: /home/node
+  TZ: ${OPENCLAW_TZ:-UTC}
+
+  OPENCLAW_STATE_DIR: /home/node/.openclaw
+  OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
+  OPENCLAW_CONFIG_DIR: /home/node/.openclaw
+  OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
+
+  VENV_DIR: /home/node/.venvs/openclaw
+  NPM_CONFIG_PREFIX: /home/node/.npm-global
+  PATH: /home/node/.venvs/openclaw/bin:/home/node/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+  OPENCLAW_DISABLE_BONJOUR: ${OPENCLAW_DISABLE_BONJOUR:-1}
+  OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: ${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:-}
+
+x-openclaw-volumes: &openclaw-volumes
+  - ${OPENCLAW_DATA_DIR}/config:/home/node/.openclaw
+  - ${OPENCLAW_DATA_DIR}/workspace:/home/node/.openclaw/workspace
+  - ${OPENCLAW_DATA_DIR}/auth-profile-secrets:/home/node/.config/openclaw
+  - ${OPENCLAW_DATA_DIR}/npm-global:/home/node/.npm-global
+  - ${OPENCLAW_DATA_DIR}/venv-openclaw:/home/node/.venvs/openclaw
+
+x-openclaw-security: &openclaw-security
+  cap_drop:
+    - NET_RAW
+    - NET_ADMIN
+  security_opt:
+    - no-new-privileges:true
+  init: true
+
+services:
+  openclaw-permissions:
+    image: *openclaw-image
+    container_name: openclaw-permissions
+    user: root
+    env_file: *openclaw-env-file
+    environment: *openclaw-env
+    volumes: *openclaw-volumes
+    entrypoint:
+      - /usr/local/bin/openclaw-permissions-init
+    restart: "no"
+
+  openclaw-gateway:
+    image: *openclaw-image
+    container_name: openclaw-gateway
+
+    env_file: *openclaw-env-file
+
+    environment:
+      <<: *openclaw-env
+      TERM: dumb
+      NO_COLOR: "1"
+      FORCE_COLOR: "0"
+
+    volumes: *openclaw-volumes
+
+    ports:
+      - "${OPENCLAW_GATEWAY_PUBLIC_PORT:-18789}:18789"
+      - "${OPENCLAW_BRIDGE_PUBLIC_PORT:-18790}:18790"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    <<: *openclaw-security
+
+    depends_on:
+      openclaw-permissions:
+        condition: service_completed_successfully
+
+    restart: unless-stopped
+
+    entrypoint:
+      - /usr/local/bin/openclaw-gateway-entrypoint
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:18789/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  openclaw-cli:
+    image: *openclaw-image
+    container_name: openclaw-cli
+
+    network_mode: "service:openclaw-gateway"
+
+    env_file: *openclaw-env-file
+
+    environment:
+      <<: *openclaw-env
+      TERM: xterm-256color
+      COLUMNS: "${OPENCLAW_CLI_COLUMNS:-160}"
+      LINES: "${OPENCLAW_CLI_LINES:-40}"
+      BROWSER: echo
+
+    volumes: *openclaw-volumes
+
+    <<: *openclaw-security
+
+    stdin_open: true
+    tty: true
+
+    entrypoint:
+      - node
+      - dist/index.js
+
+    depends_on:
+      - openclaw-gateway
